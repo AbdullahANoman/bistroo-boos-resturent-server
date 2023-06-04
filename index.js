@@ -1,29 +1,45 @@
-const express = require("express");
+const express = require('express');
 const app = express();
+const cors = require('cors');
 const jwt = require('jsonwebtoken');
-
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const cors = require("cors");
-require("dotenv").config();
+require('dotenv').config()
 const port = process.env.PORT || 5000;
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+
 
 //middleware
 app.use(cors());
 app.use(express.json());
 
-const verifyJWT = (req,res,next) =>{
-  const authorization = req.headers.authorization ;
-  if(!authorization){
-   return  res.status(401).send({error: true , message : 'unauthorized access'});
-  }
+// const verifyJWT = (req,res,next) =>{
+//   const authorization = req.headers.authorization ;
+//   if(!authorization){
+//    return  res.status(401).send({error: true , message : 'unauthorized access'});
+//   }
 
-  const token = authorization.split(' ')[1]
-  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err,decoded)=>{
-    if(err){
-     return res.status(401).send({error:true , message: 'unauthorized access'})
+//   const token = authorization.split(' ')[1]
+//   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err,decoded)=>{
+//     if(err){
+//      return res.status(401).send({error:true , message: 'unauthorized access'})
+//     }
+//     req.decoded = decoded
+//     next()
+//   })
+// }
+const verifyJWT = (req, res, next) => {
+  const authorization = req.headers.authorization;
+  if (!authorization) {
+    return res.status(401).send({ error: true, message: 'unauthorized access' });
+  }
+  // bearer token
+  const token = authorization.split(' ')[1];
+
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ error: true, message: 'unauthorized access' })
     }
-    req.decoded = decoded
-    next()
+    req.decoded = decoded;
+    next();
   })
 }
 
@@ -46,15 +62,37 @@ async function run() {
     const menuCollection = client.db("bistrooDB").collection("menu");
     const cartCollection = client.db("bistrooDB").collection("carts");
     //JWT TOKEN
-    app.post('/jwt' , (req,res)=>{
+    app.post('/jwt', (req, res) => {
       const user = req.body;
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET , {expiresIn: '1h'})
-      res.send({token})
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
+
+      res.send({ token })
     })
+    //Verify Admin middleware
+    const verifyAdmin = async(req,res,next) =>{
+      const email = req.decoded.email ;
+      const query = {email: email};
+      const user = await usersCollection.findOne(query);
+      if(user?.role !== 'Admin'){
+        return res.status(403).send({error: true , message: 'Forbidden Access'})
+      }
+      next();
+    }
+    //Admin checking 
 
-
+    app.get('/users/admin/:email',verifyJWT, async(req,res)=>{
+      const email = req.params.email;
+      const decoded = req.decoded
+      if(decoded?.email !== email ){
+        res.send({isAdmin: false})
+      }
+      const query = {email:email};
+      const user = await usersCollection.findOne(query);
+      const result = {Admin: user?.role == 'Admin'}
+      res.send(result)
+    }) 
     //users api collection
-    app.get('/users', async(req,res)=>{
+    app.get('/users', verifyJWT, verifyAdmin,  async(req,res)=>{
       const result  = await usersCollection.find().toArray()
       res.send(result)
     })
